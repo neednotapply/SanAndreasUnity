@@ -1,93 +1,162 @@
+# San Andreas for VRChat
 
-# San Andreas Unity
+An experiment in turning **GTA: San Andreas** into a **VRChat world**: the whole map, streamed in around
+you, with traffic, pedestrians, weapons, a radio, a day/night cycle and district-aware population,
+running as Udon (UdonSharp) behaviours.
 
-<br>
+> **Work in progress.** Parts of this work, parts are unverified, and some are known to be broken. The
+> [status section](#status) says which is which.
 
-<div align="center">
-    <img src="https://i.imgur.com/aIojfPW.png" width="320" height="320">
-    <br>
-    <a href="https://discord.gg/p6jjud5"> <img src="https://img.shields.io/discord/454006273751515152.svg"></a>
-    &nbsp;
-    <a href="https://gtaforums.com/topic/912395-san-andreas-unity/"> <img src="http://i.imgur.com/Fatp2jZ.png" width="50" height="30"></a>
-    &nbsp;
-    <a href="https://www.youtube.com/channel/UCsslP7vqD06AMh6JlEy0pkg"> <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/0/09/YouTube_full-color_icon_%282017%29.svg/71px-YouTube_full-color_icon_%282017%29.svg.png" width="30" height="21"> </a>
-</div>
+This project is a fork of [San Andreas Unity](https://github.com/in0finite/SanAndreasUnity), and it does
+**not** share that project's goals:
 
-<br>
+| | San Andreas Unity (original) | This project |
+|---|---|---|
+| Goal | A standalone, moddable reimplementation of the GTA:SA engine, with multiplayer | A VRChat world built from the game's data |
+| Runs on | Unity player (Windows, Linux, Mac, Android) | VRChat, through Udon |
+| Game logic | C# reimplementing the engine at runtime | Udon behaviours written for VRChat's limits, plus geometry exported ahead of time |
+| Game data | Read from your GTA install at startup | Exported once into Unity assets, then baked into a scene |
 
-San Andreas Unity is an open source reimplementation of GTA San Andreas game engine in Unity.
+The original's importer is what reads GTA's file formats, and this project builds on it. The original's
+standalone game code is still in the tree, but it isn't maintained or verified here.
 
-This won't be a complete reimplementation, but the focus is on gameplay features, mutliplayer, and creating a framework which will allow easy game extending and unlimited modding possibilities.
+## How it works
 
-For more information about the project, read this [wiki page](https://github.com/GTA-ASM/SanAndreasUnity/wiki/About-project).
+Udon can't run the original engine: no generics, no LINQ, no `Dictionary`, no creating objects at runtime,
+and `VRCUrl`s must exist before the world is built. So the work is split in two:
 
-When running for the first time, the game will ask you for path to GTA installation. You need to own GTA in order to play it.
+1. **Export (editor, once).** Editor tools in `Assets/Scripts/Editor` read your copy of GTA and write
+   meshes, materials, collision, prefabs and data tables to `Assets/ExportedAssets/`. That folder is
+   **gitignored** and is generated on your machine.
+2. **Build (editor, batch).** `VRChatTestSceneBuilder` assembles the scene: about 45,000 map objects
+   grouped into 200 m streaming cells, plus pooled vehicles, pedestrians and weapons, and the Udon
+   behaviours that drive them. The scene is also gitignored: it is around 100 MB, and it can only be
+   rebuilt from your exported assets.
+3. **Run (VRChat / ClientSim).** The behaviours in `Assets/Scripts/VRChat` run the world.
 
+Design choices worth knowing about:
 
-## Download
+- **Time is derived from server time**, not synced. The day/night cycle, the day of the week and the radio
+  playhead are all computed from `Networking.GetServerTimeInSeconds()`, so there is no sync traffic, no
+  drift, and late joiners are correct. That value can be negative before the network is up, so it is
+  sanitised before any arithmetic.
+- **Objects are pre-placed and pooled.** Udon can't spawn anything, so parked cars, pedestrians, traffic
+  and weapon racks exist in the scene and are switched on and off as cells stream in.
+- **The game's own data drives behaviour**: districts come from `info.zon`, `map.zon` and the zone opcodes
+  in `main.scm`; population from `popcycle.dat`, `pedgrp.dat` and `cargrp.dat`; lighting from
+  `timecyc.dat`; vehicle and weapon stats from `handling.cfg` and `weapon.dat`.
 
-Download it for [Windows](https://github.com/GTA-ASM/SanAndreasUnity/releases/download/v4.0/SanAndreasUnity-4.0-windows.zip), [Linux](https://github.com/GTA-ASM/SanAndreasUnity/releases/download/v4.0/SanAndreasUnity-4.0-linux.zip) or [Android](https://github.com/GTA-ASM/SanAndreasUnity/wiki/Running-on-Android).
+## Status
 
-The game is tested on Linux, Windows, Mac, and Android. It supports both Mono and IL2CPP scripting backends, so it can be built for any platform that Unity supports, provided that you can copy PC version of GTASA to target device.
+### Confirmed in testing
 
+- Day/night cycle, district names, and plausible population density per district
+- Water renders
+- Driving works
+- Traffic signals cycle correctly, on the same phase the traffic AI obeys
 
-## Multiplayer
+### Implemented, not yet confirmed in a test
 
-Game fully works in multiplayer. You can start the game as dedicated server, as a host (server & client at the same time), or you can connect to a server. This works on all supported platforms, which means you can start a host even on Android device.
+- Radio: 11 stations in dial order, with playback position derived from server time and static covering
+  load time
+- Parked cars: which spaces are filled is decided as each cell loads, from the district's hourly vehicle
+  budget, and cars are placed on the road surface
+- Pedestrians and traffic after the clock fix, including zone-appropriate vehicles
+- Weapon pickups at every spawn, held at the correct angle
+- Teleport board and vehicle spawner using VRChat's laser pointer
+- Rotating circular minimap
+- Street lamps lighting at dusk only, with a soft glow instead of a solid tile
+- Entering and leaving vehicles without clipping into them
 
-If you want to host a server, take a look at [command line instructions](https://github.com/GTA-ASM/SanAndreasUnity/wiki/Command-line) and [server administration](https://github.com/GTA-ASM/SanAndreasUnity/wiki/Server-administration).
+### Known broken or incomplete
 
+- **Missing ground.** Some areas, near cell `-12,3` and in Las Venturas, have no walkable surface and the
+  player falls through. Streaming range and missing geometry have both been ruled out; the cause is
+  unknown.
+- **Vehicle textures are scrambled** on many models. Cause: exported materials are named by renderer
+  index and reused by path, and adding wheel cloning shifted every index. Fix: the vehicle materials and
+  textures need regenerating (see [Rebuilding the vehicles](#rebuilding-the-vehicles)).
+- **Vehicle damage does nothing visible.** The damaged panel meshes were never exported, and the smoke,
+  fire and explosion effects were never built.
+- Traffic is only district-gated for 28 of 40 pooled vehicles.
+- Trains and level crossings are not implemented; crossing lights are forced off.
+- No water collision or swimming, and weapon fire sounds are not mapped.
+- One map object fails to export.
 
-## Development setup
+## Requirements
 
-- clone the project, including submodules: `git clone --depth 1 --recurse-submodules https://github.com/GTA-ASM/SanAndreasUnity`
-- open the project with Unity 2022.3.5f1 or newer
-- open startup scene located at Assets/Scenes/Startup.unity
-- press Play button
+- **Unity 2022.3.22f1**
+- The **VRChat Worlds SDK**, **UdonSharp** and **AudioLink** (resolved through `Packages/vpm-manifest.json`
+  with the VRChat Creator Companion)
+- A **legal copy of GTA: San Andreas (PC)**. Point the project at it in `config.user.json` (gitignored):
+  ```json
+  { "game_dir": "D:/SteamLibrary/steamapps/common/Grand Theft Auto San Andreas" }
+  ```
+- Git submodules: `git clone --recurse-submodules`
+- Radio station URLs, which you supply locally in `Assets/ExportedAssets/RadioStations.txt`
 
+## Building it
 
-## In-game controls
+Exports run as Unity batch jobs. **Only one Unity process can open a project at a time, so close the
+Editor first.** Don't pass `-quit` to the export entry points; they exit themselves.
 
-Press Escape while in game to open pause menu. You'll see there a lot of utilities, and among them, there is a window which shows all controls.
+```
+Unity.exe -batchmode -projectPath <project> -executeMethod SanAndreasUnity.Editor.AssetExportCommandLine.<Method>
+```
 
+| Method | Exports | Rough time |
+|---|---|---|
+| `Run` | Everything: animations, peds, vehicles, weapons, audio, world | hours |
+| `RunWorldOnly` | The static world (do **not** use `-nographics`: it exports collision with no visible geometry) | ~1h 45m |
+| `RunVehiclesOnly` | All vehicle models, materials and textures | ~15 min |
+| `RunPedsAndWeaponsOnly` | Ped and weapon meshes | ~5 min |
+| `RunVehicleDataOnly` | Handling, animation groups, comp rules | seconds |
+| `RunVRChatData` | Zones, popcycle, pedgroups, paths, timecycle | minutes |
+| `RunStreetLights` | Lamp glows on the exported lamp prefabs (re-run after `RunWorldOnly`) | ~15 min |
 
-## Game modes
+Then build the scene, either from the **San Andreas Unity → Build VRChat test scene** menu or with:
 
-Game can be extended through plugins/game modes in the form of C# DLLs. More info on [wiki](https://github.com/GTA-ASM/SanAndreasUnity/wiki/Plugins-(Game-modes)).
+```
+-executeMethod SanAndreasUnity.Editor.VRChatTestSceneBuilder.BuildFromCommandLine
+    -testSceneStreamWorld:1 -testSceneCellSize:200 -testScenePedCount:120 -testSceneVehicleCount:40
+```
 
+A full scene build takes about 6 minutes. Adding a **new** `UdonSharpBehaviour` needs two compile passes:
+the first creates its program asset, the second lets the build serialize it.
 
-## Contributing
+### Rebuilding the vehicles
 
-Join us on [discord](https://discord.gg/p6jjud5) to discuss about development.
+Exported files are reused by path when they exist. If vehicle materials or textures go stale, delete only
+the vehicle-named files (`<model>-<n>-<n>.mat` in `Materials/`, `<model>-<n>-<n>.asset` in `Textures/`) and
+run `RunVehiclesOnly`. `Materials/`, `Textures/`, `Models/` and `CollisionModels/` are **shared by every
+exported category**: never bulk-delete from them.
 
-You can check out issues for [newcomers](https://github.com/GTA-ASM/SanAndreasUnity/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22), issues related to [importing assets](https://github.com/GTA-ASM/SanAndreasUnity/issues?q=is%3Aissue+is%3Aopen+label%3Aimporting) from original game, or the [whole list](https://github.com/GTA-ASM/SanAndreasUnity/issues) of issues.
+### Diagnostics
 
-Issues that are in focus right now are those with [high priority](https://github.com/GTA-ASM/SanAndreasUnity/issues?q=is%3Aissue+is%3Aopen+label%3Apriority%3Ahigh) label and those found in [milestones](https://github.com/GTA-ASM/SanAndreasUnity/milestones).
+Editor tools for checking results rather than trusting log lines:
 
+- `GtaSceneMeshCheck`: opens the built scene and counts meshes that failed to resolve
+- `GtaVehicleRenderCheck`: renders vehicles to PNG
+- `GtaVehiclePartDump`: prints each part's position and materials
+- `GtaParkedCarGroundCheck`: measures how far parked cars sit from the road
+- `GtaVehicleAssetDependencyCheck`: lists which assets are vehicle-only before you delete anything
 
-## Screenshots
+## Legal
 
-![](https://cloud.githubusercontent.com/assets/557828/24571348/d964f098-1670-11e7-8759-0160dbf5bcb5.png)
+This repository contains **no Rockstar assets** and must not. Everything under `Assets/ExportedAssets/`
+is extracted from your own copy of the game and is gitignored. Uploading a world built from those assets
+to VRChat would redistribute copyrighted content; that is your responsibility, and it is why no built
+scene is included here.
 
-![](https://cloud.githubusercontent.com/assets/557828/24571349/d96b7c24-1670-11e7-997d-ae15913481f8.png)
+This project is not affiliated with or endorsed by Rockstar Games, Take-Two Interactive or VRChat Inc.
+Grand Theft Auto and San Andreas are trademarks of their owners.
 
-![](https://i.imgur.com/HX978mr.png)
+## Credits and licence
 
-## Videos
+Licensed under the **MIT License** (see [LICENSE](LICENSE)), Copyright (c) 2015 James King.
 
-###
-
-[![](http://img.youtube.com/vi/PItR-0FF7JI/0.jpg)](https://www.youtube.com/watch?v=PItR-0FF7JI)
-
-###
-
-[![](http://img.youtube.com/vi/hnInLUbobI8/0.jpg)](https://www.youtube.com/watch?v=hnInLUbobI8)
-
-###
-
-[![](http://img.youtube.com/vi/VDfSE3nc3oM/0.jpg)](https://www.youtube.com/watch?v=VDfSE3nc3oM)
-
-###
-
-[![](http://img.youtube.com/vi/NPCiUZ-MZGM/0.jpg)](https://www.youtube.com/watch?v=NPCiUZ-MZGM)
-
+The GTA file importers, renderer and the engine reimplementation this builds on are the work of
+[San Andreas Unity](https://github.com/in0finite/SanAndreasUnity) by **in0finite** and its contributors.
+Its documentation is on the [project wiki](https://github.com/GTA-ASM/SanAndreasUnity/wiki), and it is
+where to look if you want the standalone game. Build dependencies such as `UGameCoreUtilities`,
+`MirrorLite` and `NavMeshes` come from the same ecosystem as git submodules.

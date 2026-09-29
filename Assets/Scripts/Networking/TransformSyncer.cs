@@ -172,7 +172,8 @@ namespace SanAndreasUnity.Net
                 return;
             }
 
-            m_visualizationQueue ??= new Queue<GameObject>();
+            if (null == m_visualizationQueue)
+                m_visualizationQueue = new Queue<GameObject>();
 
             while (m_visualizationQueue.Count >= m_parameters.maxNumVisualizations)
                 Object.Destroy(m_visualizationQueue.Dequeue());
@@ -201,7 +202,8 @@ namespace SanAndreasUnity.Net
                 return;
             }
 
-            m_snapshotBuffer ??= new Queue<SyncData>();
+            if (null == m_snapshotBuffer)
+                m_snapshotBuffer = new Queue<SyncData>();
 
             if (m_snapshotBuffer.Count == 0)
             {

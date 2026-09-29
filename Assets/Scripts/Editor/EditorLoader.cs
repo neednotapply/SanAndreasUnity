@@ -3,12 +3,31 @@ using UGameCore.Utilities;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEditor;
+using UnityEditor.SceneManagement;
 using UnityEngine;
 
 namespace SanAndreasUnity.Editor
 {
     public class EditorLoader
     {
+        // Startup.unity (build index 0) is the only scene containing the GameManager prefab
+        // (Loader, AudioManager, and every other manager singleton). Main.unity/Demo.unity
+        // expect GameManager to already exist via DontDestroyOnLoad from that scene, so playing
+        // them directly makes e.g. AudioManager.InitFromLoader() NRE on a missing singleton.
+        //
+        // These are the ONLY scenes that need that bootstrap. Scenes built from exported assets
+        // (the VRChat scenes) must not be redirected - forcing them through Startup would launch the
+        // GTA importer instead of the scene you pressed Play on.
+        private const string StartupScenePath = "Assets/Scenes/Startup.unity";
+        private const string GameManagerPrefabPath = "Assets/Prefabs/GameManager.prefab";
+
+        private static readonly string[] ScenesNeedingGameManagerBootstrap =
+        {
+            "Assets/Scenes/Startup.unity",
+            "Assets/Scenes/Main.unity",
+            "Assets/Scenes/Demo.unity",
+        };
+
         [InitializeOnLoadMethod]
         static void Init()
         {
@@ -17,6 +36,47 @@ namespace SanAndreasUnity.Editor
 
             Loader.onLoadingFinished -= OnLoadingFinished;
             Loader.onLoadingFinished += OnLoadingFinished;
+
+            // the active scene can change at any time, so re-evaluate rather than deciding once on load
+            EditorSceneManager.activeSceneChangedInEditMode -= OnActiveSceneChangedInEditMode;
+            EditorSceneManager.activeSceneChangedInEditMode += OnActiveSceneChangedInEditMode;
+
+            UpdatePlayModeStartScene();
+        }
+
+        static void OnActiveSceneChangedInEditMode(
+            UnityEngine.SceneManagement.Scene previous, UnityEngine.SceneManagement.Scene current)
+        {
+            UpdatePlayModeStartScene();
+        }
+
+        /// <summary>
+        /// Redirect Play to the startup scene only when the open scene is one of the importer-driven
+        /// scenes. Anything else (notably the exported VRChat scenes) plays as-is.
+        /// </summary>
+        static void UpdatePlayModeStartScene()
+        {
+            string activeScenePath = EditorSceneManager.GetActiveScene().path;
+
+            bool needsBootstrap = false;
+            foreach (string path in ScenesNeedingGameManagerBootstrap)
+            {
+                if (string.Equals(activeScenePath, path, System.StringComparison.OrdinalIgnoreCase))
+                {
+                    needsBootstrap = true;
+                    break;
+                }
+            }
+
+            if (!needsBootstrap)
+            {
+                EditorSceneManager.playModeStartScene = null;
+                return;
+            }
+
+            var startupScene = AssetDatabase.LoadAssetAtPath<SceneAsset>(StartupScenePath);
+            if (startupScene != null)
+                EditorSceneManager.playModeStartScene = startupScene;
         }
 
         static void EditorUpdate()
@@ -68,10 +128,26 @@ namespace SanAndreasUnity.Editor
 
             if (null == Loader.Singleton)
             {
-                new GameObject("Loader", typeof(Loader));
+                InstantiateGameManager();
             }
 
             Loader.StartLoading();
+        }
+
+        // Loader lives on the same GameManager prefab as AudioManager and every other manager
+        // singleton, so a bare Loader-only GameObject leaves those managers missing.
+        static void InstantiateGameManager()
+        {
+            var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(GameManagerPrefabPath);
+            if (prefab != null)
+            {
+                PrefabUtility.InstantiatePrefab(prefab);
+                return;
+            }
+
+            Debug.LogError($"Could not find GameManager prefab at {GameManagerPrefabPath} - " +
+                "falling back to a bare Loader object. Some managers (e.g. AudioManager) will be missing.");
+            new GameObject("Loader", typeof(Loader));
         }
 
         [MenuItem(EditorCore.MenuName + "/" + "Change path to GTA")]

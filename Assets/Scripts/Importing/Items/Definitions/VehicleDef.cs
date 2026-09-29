@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Globalization;
 
 namespace SanAndreasUnity.Importing.Items.Definitions
@@ -39,6 +39,9 @@ namespace SanAndreasUnity.Importing.Items.Definitions
 
             public int nExtraA { get { return (value & 0xFFFF) >> 0; } }
             public int nExtraB { get { return (int)(value & 0xFFFF0000) >> 16; } }
+
+            /// <summary> The packed word itself, so it can be carried out to exported data. </summary>
+            public int Value { get { return value; } }
 
             public CompRulesUnion(int value)
             {

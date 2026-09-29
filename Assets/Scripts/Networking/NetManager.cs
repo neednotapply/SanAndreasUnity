@@ -12,12 +12,23 @@ namespace SanAndreasUnity.Net
 
 		public	static	int	defaultListenPortNumber { get { return 7777; } }
 
-        public static int listenPortNumber => Transport.activeTransport switch
+        // note: written without a switch expression, because UdonSharp parses every script in the
+        // project at C# 7.3 and rejects newer syntax
+        public static int listenPortNumber
         {
-            TelepathyTransport telepathyTransport => telepathyTransport.port,
-            kcp2k.KcpTransport kcpTransport => kcpTransport.Port,
-            _ => throw new NotSupportedException("Can not obtain port number from current transport"),
-        };
+            get
+            {
+                var transport = Transport.activeTransport;
+
+                if (transport is TelepathyTransport telepathyTransport)
+                    return telepathyTransport.port;
+
+                if (transport is kcp2k.KcpTransport kcpTransport)
+                    return kcpTransport.Port;
+
+                throw new NotSupportedException("Can not obtain port number from current transport");
+            }
+        }
 
         public static bool dontListen { get { return NetworkServer.dontListen; } set { NetworkServer.dontListen = value; } }
 

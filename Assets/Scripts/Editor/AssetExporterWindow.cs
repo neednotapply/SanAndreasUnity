@@ -56,7 +56,103 @@ namespace SanAndreasUnity.Editor
             if (GUILayout.Button("Export from selection"))
                 m_assetExporter.Export(AssetExporter.ExportType.FromSelection);
 
+            GUILayout.Space(20);
+
+            EditorGUILayout.HelpBox(
+                "Vehicles and peds are normally only created at runtime and discarded, so they never " +
+                "become project assets. These buttons build every model from the game files and export " +
+                "it. Enable \"Export prefabs\" above to also get a prefab per model.\n\n" +
+                "Export animations BEFORE peds - peds get an Animator wired to a locomotion blend tree " +
+                "built from the exported clips, and that step is skipped if the clips don't exist yet.",
+                MessageType.Info,
+                true);
+
+            m_assetExporter.CreateAvatarAndAnimator = EditorGUILayout.Toggle(
+                "Create avatar + animator", m_assetExporter.CreateAvatarAndAnimator);
+
+            if (GUILayout.Button("Export vehicles from game files"))
+                m_assetExporter.Export(AssetExporter.ExportType.VehiclesFromGameFiles);
+
+            if (GUILayout.Button("Export peds from game files"))
+                m_assetExporter.Export(AssetExporter.ExportType.PedsFromGameFiles);
+
+            if (GUILayout.Button("Export weapons from game files"))
+                m_assetExporter.Export(AssetExporter.ExportType.WeaponsFromGameFiles);
+
+            GUILayout.Space(20);
+
+            m_assetExporter.MakeAnimationsMecanimCompatible = EditorGUILayout.Toggle(
+                "Mecanim-compatible anims", m_assetExporter.MakeAnimationsMecanimCompatible);
+
+            EditorGUILayout.HelpBox(
+                "Animations are imported as legacy clips (for the built-in Animation component). " +
+                "Mecanim/Animator - which VRChat uses - rejects legacy clips, so leave the toggle above " +
+                "enabled when exporting for VRChat. Disable it only if you want clips for the legacy " +
+                "Animation component used by this project at runtime.",
+                MessageType.Info,
+                true);
+
+            if (GUILayout.Button("Export animations from game files"))
+                m_assetExporter.Export(AssetExporter.ExportType.AnimationsFromGameFiles);
+
+            GUILayout.Space(20);
+
+            EditorGUILayout.HelpBox(
+                "The path node network (roads, ped paths, lanes, traffic lights) is parsed from " +
+                "nodes0..63.dat on every load and never persisted. Export it so traffic and ped AI can " +
+                "run without the importer. Links are pre-resolved to array indices so Udon can walk the " +
+                "graph without any lookups.",
+                MessageType.Info,
+                true);
+
+            if (GUILayout.Button("Export path node network"))
+                ExportPathNetwork();
+
+            GUILayout.Space(20);
+
+            m_assetExporter.ExportSfxAudio = EditorGUILayout.Toggle(
+                "Export SFX audio", m_assetExporter.ExportSfxAudio);
+            m_assetExporter.ExportStreamAudio = EditorGUILayout.Toggle(
+                "Export stream audio", m_assetExporter.ExportStreamAudio);
+
+            EditorGUILayout.HelpBox(
+                "SFX are stored as PCM and convert directly. Stream audio (radio/music) is Ogg Vorbis " +
+                "played through a streaming clip that holds no data, so exporting it requires decoding " +
+                "every track to uncompressed PCM - that is easily multiple GB and will not fit in a " +
+                "VRChat world. Leave it off unless you specifically need it.",
+                MessageType.Warning,
+                true);
+
+            if (GUILayout.Button("Export audio from game files"))
+                m_assetExporter.Export(AssetExporter.ExportType.AudioFromGameFiles);
+
             EditorGUILayout.EndScrollView();
+        }
+
+        void ExportPathNetwork()
+        {
+            if (!Behaviours.Loader.HasLoaded)
+            {
+                EditorUtility.DisplayDialog("", "Game data must be loaded first.", "Ok");
+                return;
+            }
+
+            try
+            {
+                string path = m_assetExporter.SelectedFolder + "/PathNetwork.asset";
+                var network = PathNetworkExporter.ExportToAsset(path);
+
+                string message = $"Exported path network to {path}\n\n" +
+                    $"nodes: {network.NodeCount}\nlinks: {network.LinkCount}\nnav nodes: {network.NavNodeCount}";
+
+                Debug.Log(message);
+                EditorUtility.DisplayDialog("", message, "Ok");
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogException(ex);
+                EditorUtility.DisplayDialog("", "Failed to export path network:\n\n" + ex.Message, "Ok");
+            }
         }
     }
 }

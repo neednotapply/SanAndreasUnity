@@ -14,7 +14,7 @@ namespace SanAndreasUnity.Editor
 {
     public static class NavMeshGeneratorCommandLine
     {
-        private static void Run()
+        public static void Run()
         {
             string[] args = Environment.GetCommandLineArgs();
 
@@ -95,6 +95,23 @@ namespace SanAndreasUnity.Editor
             var navMeshBuildSettings = NavMesh.GetSettingsByID(0);
             navMeshBuildSettings.maxJobWorkers = CmdLineUtils.TryGetUshortArgument("navMeshGenerationMaxJobWorkers", out ushort maxJobWorkers) ? maxJobWorkers : (uint)2;
 
+            // Unity's default voxel size (agentRadius/3, ~0.17) over GTA's 6km x 6km map is what produces a
+            // ~141 MB nav mesh - far too large for a VRChat world. Coarser voxels shrink it dramatically and
+            // are still plenty for NPCs walking streets. All of it is overridable from the command line.
+            navMeshBuildSettings.agentRadius = GetFloatArgOrDefault("navMeshAgentRadius", 0.5f);
+            navMeshBuildSettings.agentHeight = GetFloatArgOrDefault("navMeshAgentHeight", 2f);
+            navMeshBuildSettings.agentSlope = GetFloatArgOrDefault("navMeshAgentSlope", 45f);
+            navMeshBuildSettings.agentClimb = GetFloatArgOrDefault("navMeshAgentClimb", 0.75f);
+            navMeshBuildSettings.voxelSize = GetFloatArgOrDefault("navMeshVoxelSize", 0.35f);
+            navMeshBuildSettings.tileSize = CmdLineUtils.GetUshortArgumentOrDefault("navMeshTileSize", 256);
+            // culls tiny disconnected islands, which are pure size cost and useless to NPCs
+            navMeshBuildSettings.minRegionArea = GetFloatArgOrDefault("navMeshMinRegionArea", 4f);
+
+            Debug.Log($"Nav mesh settings: voxelSize {navMeshBuildSettings.voxelSize}, " +
+                $"tileSize {navMeshBuildSettings.tileSize}, agentRadius {navMeshBuildSettings.agentRadius}, " +
+                $"agentHeight {navMeshBuildSettings.agentHeight}, agentClimb {navMeshBuildSettings.agentClimb}, " +
+                $"minRegionArea {navMeshBuildSettings.minRegionArea}, maxJobWorkers {navMeshBuildSettings.maxJobWorkers}");
+
             navMeshGenerator.Generate(navMeshBuildSettings, true);
 
             while (navMeshGenerator.IsRunning)
@@ -107,7 +124,21 @@ namespace SanAndreasUnity.Editor
 
             yield return null;
 
-            navMeshGenerator.SaveNavMesh("Assets/GeneratedNavMeshFromCommandLine.asset");
+            string outputPath = CmdLineUtils.GetStringArgumentOrDefault(
+                "navMeshOutputPath", "Assets/GeneratedNavMeshFromCommandLine.asset");
+
+            navMeshGenerator.SaveNavMesh(outputPath);
+
+            yield return null;
+
+            // the resulting size is the whole point of this exercise, so report it
+            string fullPath = System.IO.Path.Combine(
+                System.IO.Directory.GetParent(Application.dataPath).FullName, outputPath);
+            if (System.IO.File.Exists(fullPath))
+            {
+                long bytes = new System.IO.FileInfo(fullPath).Length;
+                Debug.Log($"Nav mesh saved to {outputPath} - size {bytes / (1024f * 1024f):F2} MB");
+            }
 
             Debug.Log("Finished generation of nav mesh from command line");
 
@@ -115,6 +146,19 @@ namespace SanAndreasUnity.Editor
             yield return null;
 
             EditorApplication.Exit(0);
+        }
+
+        private static float GetFloatArgOrDefault(string argName, float defaultValue)
+        {
+            if (!CmdLineUtils.TryGetStringArgument(argName, out string value))
+                return defaultValue;
+
+            if (float.TryParse(value, System.Globalization.NumberStyles.Float,
+                    System.Globalization.CultureInfo.InvariantCulture, out float parsed))
+                return parsed;
+
+            Debug.LogWarning($"Could not parse '{value}' for {argName}, using default {defaultValue}");
+            return defaultValue;
         }
 
         static void OnFinishWithError(Exception exception)

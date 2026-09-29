@@ -189,6 +189,8 @@ namespace SanAndreasUnity.UI {
 
 			Rect newRect;
 			Rect inputRect = this.windowRect;
+			inputRect.width = Mathf.Min(inputRect.width, Screen.width);
+			inputRect.height = Mathf.Min(inputRect.height, Screen.height);
 			if(this.IsMinimized)
 				inputRect.height = kMinimizedWindowHeight;
 			
@@ -196,7 +198,12 @@ namespace SanAndreasUnity.UI {
 				newRect = GUI.ModalWindow (this.windowId, inputRect, WindowFunction, this.windowName);
 			else
 				newRect = GUI.Window( this.windowId, inputRect, WindowFunction, this.windowName );
-			
+
+			// keep the window's title bar reachable even if it was positioned (or dragged)
+			// off-screen, e.g. by a stale resolution when the rect was first centered
+			newRect.x = Mathf.Clamp(newRect.x, 0, Mathf.Max(0, Screen.width - newRect.width));
+			newRect.y = Mathf.Clamp(newRect.y, 0, Mathf.Max(0, Screen.height - newRect.height));
+
 			if (this.IsMinimized)
 				this.windowRect.position = newRect.position;	// only copy position
 			else

@@ -54,8 +54,8 @@ namespace SanAndreasUnity.Behaviours
 	    		this.UseTouchInput = true;
 	    	}
 
-	    	// set default font size on mobile platforms
-	    	if (Application.isMobilePlatform || (m_changeFontSizeInEditor && Application.isEditor))
+	    	// scale font size to the screen height on every platform, so the UI stays legible
+	    	// on displays whose resolution differs from the reference height
 	    	{
 	    		int fontSize = Mathf.RoundToInt( m_defaultFontSizeOnMobile / (float) m_referenceScreenHeightForFontSize * Screen.height );
 	    		if (fontSize > m_maxFontSize)
